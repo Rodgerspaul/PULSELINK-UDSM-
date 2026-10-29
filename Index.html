@@ -1,0 +1,323 @@
+
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PulseLink UDSM</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#102a43;--teal:#0d9488;--bg:#f3f6fa;--text:#203044}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
+header{background:var(--navy);color:white;padding:22px 16px}
+header h1{margin:0 0 8px;font-size:25px}
+header p{margin:0;color:#d5e7f5}
+main{max-width:950px;margin:auto;padding:16px}
+.card{background:white;border-radius:14px;padding:16px;margin:12px 0;box-shadow:0 3px 14px #102a4310}
+h2{font-size:19px;margin-top:0}
+input,textarea,select,button{font:inherit;width:100%;padding:12px;margin:6px 0;border-radius:9px;border:1px solid #d5dce5}
+button{background:var(--teal);color:white;border:0;font-weight:bold;cursor:pointer}
+button.secondary{background:var(--navy)}
+nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
+nav button{margin:0}
+.item{padding:12px 0;border-bottom:1px solid #e7edf3;overflow-wrap:anywhere}
+.small{font-size:13px;color:#64748b}
+.hidden{display:none}
+#notice{padding:10px;border-radius:8px;background:#e0f2fe;margin:10px 0}
+@media(min-width:650px){nav{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>〰 PulseLink UDSM</h1>
+  <p>Unganisha ujuzi. Shiriki taarifa. Jenga jamii.</p>
+</header>
+<main>
+  <div id="notice">Karibu! Unganisha mfumo na Supabase ili kuanza.</div>
+
+  <section class="card" id="auth">
+    <h2>Akaunti ya mwanafunzi</h2>
+    <input id="email" type="email" placeholder="Barua pepe">
+    <input id="password" type="password" placeholder="Password (angalau herufi 6)">
+    <button onclick="signup()">Jisajili</button>
+    <button class="secondary" onclick="login()">Ingia</button>
+    <button class="secondary" onclick="logout()">Toka</button>
+    <p id="who" class="small">Hujaingia bado.</p>
+  </section>
+
+  <nav>
+    <button onclick="show('campus')">CampusPulse</button>
+    <button onclick="show('skills')">SkillLoop</button>
+    <button onclick="show('proof')">SkillProof</button>
+    <button onclick="show('matching')">AI Matching</button>
+  </nav>
+
+  <section class="card" id="campus">
+    <h2>CampusPulse · Taarifa za kampasi</h2>
+    <input id="postTitle" placeholder="Kichwa cha taarifa">
+    <select id="category">
+      <option value="Masomo">Masomo</option>
+      <option value="Huduma">Huduma</option>
+      <option value="Matukio">Matukio</option>
+      <option value="General">Nyingine</option>
+    </select>
+    <textarea id="postBody" placeholder="Andika taarifa..." rows="3"></textarea>
+    <button onclick="addPost()">Chapisha taarifa</button>
+    <button class="secondary" onclick="loadPosts()">Onyesha upya taarifa</button>
+    <div id="posts"></div>
+  </section>
+
+  <section class="card hidden" id="skills">
+    <h2>SkillLoop · Badilishana ujuzi</h2>
+    <input id="skillName" placeholder="Mfano: Graphic Design">
+    <select id="skillType">
+      <option value="teach">Ninaweza kufundisha</option>
+      <option value="learn">Nataka kujifunza</option>
+    </select>
+    <textarea id="skillDesc" placeholder="Eleza ujuzi wako au unachotaka kujifunza"></textarea>
+    <button onclick="addSkill()">Hifadhi ujuzi</button>
+    <button class="secondary" onclick="loadSkills()">Ona ujuzi wa wanafunzi</button>
+    <div id="skillList"></div>
+  </section>
+
+  <section class="card hidden" id="proof">
+    <h2>SkillProof · Ushahidi wa ujuzi</h2>
+    <input id="proofSkill" placeholder="Jina la ujuzi">
+    <input id="proofUrl" type="url" placeholder="Link ya ushahidi (hiari)">
+    <textarea id="proofDesc" placeholder="Maelezo ya ushahidi"></textarea>
+    <button onclick="addProof()">Wasilisha ushahidi</button>
+    <button class="secondary" onclick="loadProof()">Ona ushahidi wangu</button>
+    <p class="small">Ushahidi huanza kama unasubiri ukaguzi. Mfumo huu bado hauna msimamizi wa kuthibitisha ujuzi.</p>
+    <div id="proofList"></div>
+  </section>
+
+  <section class="card hidden" id="matching">
+    <h2>Skill Matching</h2>
+    <p>Inalinganisha ujuzi unaofundishwa na unaotafutwa kwa kutumia majina yanayofanana.</p>
+    <button onclick="matchSkills()">Tafuta ulinganifu</button>
+    <div id="matches"></div>
+    <p class="small">Huu ni ulinganishaji wa kanuni za msingi, si AI ya hali ya juu bado.</p>
+  </section>
+</main>
+
+<script>
+const SUPABASE_URL = "WEKA_PROJECT_URL_HAPA";
+const SUPABASE_KEY = "WEKA_PUBLISHABLE_KEY_HAPA";
+const configured =
+  SUPABASE_URL.startsWith("https://") &&
+  !SUPABASE_URL.includes("WEKA_") &&
+  !SUPABASE_KEY.includes("WEKA_");
+
+const db = configured
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
+
+let currentUser = null;
+
+function say(message){
+  document.getElementById("notice").textContent = message;
+}
+function requireDb(){
+  if(!db){say("Weka Project URL na Publishable Key kwanza.");return false}
+  if(!currentUser){say("Tafadhali ingia kwenye akaunti kwanza.");return false}
+  return true;
+}
+function show(id){
+  ["campus","skills","proof","matching"].forEach(x =>
+    document.getElementById(x).classList.toggle("hidden",x!==id));
+  if(id==="campus") loadPosts();
+  if(id==="skills") loadSkills();
+  if(id==="proof") loadProof();
+}
+async function refreshUser(){
+  if(!db)return;
+  const {data:{user}} = await db.auth.getUser();
+  currentUser = user;
+  document.getElementById("who").textContent =
+    user ? "Umeingia: "+user.email : "Hujaingia bado.";
+  if(user){
+    document.getElementById("auth").querySelector("h2").textContent="Akaunti yako";
+  }
+}
+async function signup(){
+  if(!db){say("Weka taarifa za Supabase kwanza.");return}
+  const email=document.getElementById("email").value.trim();
+  const password=document.getElementById("password").value;
+  if(!email||password.length<6){say("Weka email sahihi na password ya angalau herufi 6.");return}
+  const {data,error}=await db.auth.signUp({email,password});
+  if(error){say(error.message);return}
+  currentUser=data.user;
+  if(data.session){
+    await createProfile();
+    await refreshUser();
+    say("Akaunti imetengenezwa. Karibu PulseLink!");
+  }else{
+    say("Angalia email yako kuthibitisha akaunti, kisha ingia.");
+  }
+}
+async function login(){
+  if(!db){say("Weka taarifa za Supabase kwanza.");return}
+  const {error}=await db.auth.signInWithPassword({
+    email:document.getElementById("email").value.trim(),
+    password:document.getElementById("password").value
+  });
+  if(error){say(error.message);return}
+  await refreshUser();
+  await createProfile();
+  say("Umeingia kwenye PulseLink UDSM.");
+  loadPosts();
+}
+async function logout(){
+  if(!db)return;
+  const {error}=await db.auth.signOut();
+  if(error){say(error.message);return}
+  currentUser=null;
+  await refreshUser();
+  say("Umetoka kwenye akaunti.");
+}
+async function createProfile(){
+  if(!currentUser)return;
+  const {error}=await db.from("profiles").upsert({
+    id:currentUser.id,
+    full_name:currentUser.email.split("@")[0]
+  });
+  if(error)say("Akaunti imeingia; wasifu haujahifadhiwa: "+error.message);
+}
+async function addPost(){
+  if(!requireDb())return;
+  const title=document.getElementById("postTitle").value.trim();
+  const content=document.getElementById("postBody").value.trim();
+  if(!title||!content){say("Jaza kichwa na maelezo ya taarifa.");return}
+  const {error}=await db.from("campus_posts").insert({
+    author_id:currentUser.id,title,content,
+    category:document.getElementById("category").value
+  });
+  if(error){say(error.message);return}
+  document.getElementById("postTitle").value="";
+  document.getElementById("postBody").value="";
+  say("Taarifa imehifadhiwa!");
+  loadPosts();
+}
+async function loadPosts(){
+  const box=document.getElementById("posts");
+  if(!db){box.textContent="Unganisha Supabase ili kuona taarifa.";return}
+  if(!currentUser){box.textContent="Ingia ili kuona taarifa.";return}
+  const {data,error}=await db.from("campus_posts")
+    .select("id,title,content,category,created_at,author_id")
+    .gt("expires_at",new Date().toISOString())
+    .order("created_at",{ascending:false}).limit(50);
+  if(error){box.textContent=error.message;return}
+  box.replaceChildren();
+  (data||[]).forEach(p=>{
+    const el=document.createElement("div");el.className="item";
+    const h=document.createElement("strong");h.textContent=p.title;
+    const body=document.createElement("p");body.textContent=p.content;
+    const meta=document.createElement("p");meta.className="small";
+    meta.textContent=p.category+" · "+new Date(p.created_at).toLocaleString();
+    el.append(h,body,meta);
+    if(p.author_id!==currentUser.id){
+      const b=document.createElement("button");b.textContent="Ripoti taarifa";
+      b.onclick=()=>reportPost(p.id);el.append(b);
+    }
+    box.append(el);
+  });
+  if(!data?.length)box.textContent="Bado hakuna taarifa. Chapisha ya kwanza!";
+}
+async function reportPost(id){
+  if(!requireDb())return;
+  const reason=prompt("Kwa nini unaripoti taarifa hii?");
+  if(!reason)return;
+  const {error}=await db.from("post_reports").insert({
+    post_id:id,reporter_id:currentUser.id,reason
+  });
+  say(error?error.message:"Ripoti imetumwa.");
+}
+async function addSkill(){
+  if(!requireDb())return;
+  const skill_name=document.getElementById("skillName").value.trim();
+  if(!skill_name){say("Andika jina la ujuzi.");return}
+  const {error}=await db.from("skill_profiles").insert({
+    user_id:currentUser.id,skill_name,
+    skill_type:document.getElementById("skillType").value,
+    description:document.getElementById("skillDesc").value.trim()
+  });
+  if(error){say(error.message);return}
+  say("Ujuzi umehifadhiwa!");
+  loadSkills();
+}
+async function loadSkills(){
+  const box=document.getElementById("skillList");
+  if(!db||!currentUser){box.textContent="Ingia ili kuona ujuzi.";return}
+  const {data,error}=await db.from("skill_profiles")
+    .select("skill_name,skill_type,description,created_at")
+    .order("created_at",{ascending:false}).limit(100);
+  if(error){box.textContent=error.message;return}
+  box.replaceChildren();
+  (data||[]).forEach(s=>{
+    const el=document.createElement("div");el.className="item";
+    const h=document.createElement("strong");h.textContent=s.skill_name;
+    const p=document.createElement("p");
+    p.textContent=(s.skill_type==="teach"?"Anafundisha":"Anataka kujifunza")+
+      (s.description?" · "+s.description:"");
+    el.append(h,p);box.append(el);
+  });
+}
+async function addProof(){
+  if(!requireDb())return;
+  const skill_name=document.getElementById("proofSkill").value.trim();
+  if(!skill_name){say("Andika ujuzi unaowasilisha ushahidi wake.");return}
+  const {error}=await db.from("skill_evidence").insert({
+    user_id:currentUser.id,skill_name,
+    evidence_url:document.getElementById("proofUrl").value.trim()||null,
+    description:document.getElementById("proofDesc").value.trim()
+  });
+  if(error){say(error.message);return}
+  say("Ushahidi umetumwa kwa ukaguzi.");
+  loadProof();
+}
+async function loadProof(){
+  const box=document.getElementById("proofList");
+  if(!db||!currentUser){box.textContent="Ingia ili kuona ushahidi wako.";return}
+  const {data,error}=await db.from("skill_evidence")
+    .select("skill_name,status,description,created_at")
+    .order("created_at",{ascending:false});
+  if(error){box.textContent=error.message;return}
+  box.replaceChildren();
+  (data||[]).forEach(s=>{
+    const el=document.createElement("div");el.className="item";
+    const h=document.createElement("strong");h.textContent=s.skill_name;
+    const p=document.createElement("p");
+    p.textContent="Hali: "+({pending:"Unasubiri ukaguzi",verified:"Imethibitishwa",rejected:"Imekataliwa"}[s.status]||s.status);
+    el.append(h,p);box.append(el);
+  });
+}
+async function matchSkills(){
+  if(!db||!currentUser){say("Ingia kwanza ili kutafuta ulinganifu.");return}
+  const {data,error}=await db.from("skill_profiles")
+    .select("user_id,skill_name,skill_type,description");
+  if(error){say(error.message);return}
+  const teaches=(data||[]).filter(s=>s.skill_type==="teach");
+  const learns=(data||[]).filter(s=>s.skill_type==="learn");
+  const box=document.getElementById("matches");box.replaceChildren();
+  let count=0;
+  teaches.forEach(t=>learns.forEach(l=>{
+    if(t.user_id===l.user_id)return;
+    const a=t.skill_name.toLowerCase().trim();
+    const b=l.skill_name.toLowerCase().trim();
+    if(a===b||a.includes(b)||b.includes(a)){
+      const el=document.createElement("div");el.className="item";
+      el.textContent=t.skill_name+" — ujuzi unaofundishwa unalingana na unaotafutwa.";
+      box.append(el);count++;
+    }
+  }));
+  if(!count)box.textContent="Bado hakuna ulinganifu. Ongeza ujuzi unaofundisha na unaotaka kujifunza.";
+}
+if(db){
+  db.auth.onAuthStateChange(()=>setTimeout(refreshUser,0));
+  refreshUser();
+}
+</script>
+</body>
+  </html>
+  
